@@ -30,6 +30,7 @@
   #include <Adafruit_GFX.h>
   #include <Adafruit_SSD1306.h>
   #include <Fonts/FreeSans18pt7b.h>
+  #include <Fonts/FreeSans12pt7b.h>
   Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 #endif
 
@@ -39,6 +40,7 @@
   #include <Adafruit_GFX.h>
   #include <Adafruit_SH1106.h>
   #include <Fonts/FreeSans18pt7b.h>
+  #include <Fonts/FreeSans12pt7b.h>
   Adafruit_SH1106 display(OLED_RESET);
 #endif
 
@@ -239,9 +241,9 @@ void readSpitPot() {
     }
   }
 
-
   void refreshDisplay() {
     display.clearDisplay();
+#if SCREEN_HEIGHT >= 64
     display.setTextSize(1);
     display.setTextColor(WHITE);
     display.setCursor(0, 0);
@@ -285,9 +287,58 @@ void readSpitPot() {
     }
     if (air_valve == 1) {
       display.fillRect(89, 54, 39, 10, WHITE);
-      display.setCursor(91, 55);
+      display.setCursor(91, 55);   
       display.print("Air On");
     }
+#else
+    display.clearDisplay();
+    display.setTextColor(WHITE);
+    
+    display.setCursor(101, 0);
+    display.setFont(&FreeSans12pt7b);
+    display.setCursor(0, 16);
+    display.print(mist_pot_val);
+
+    display.setFont();
+    display.setTextSize(1);
+    int x = 44;
+    if (mist_pot_val < 10) {
+      x = 18;
+    } else if (mist_pot_val < 100) {
+      x = 31;
+    }
+    display.setCursor(x, 0);
+    display.print("Coolant");
+    display.setCursor(x, 10);
+    display.print("ml/h");
+
+    display.setFont(&FreeSans12pt7b);
+    display.setCursor(87, 16);
+    display.print(spit_pot_val);
+    display.setFont();
+    display.setTextSize(1);
+    display.setCursor(104, 0);
+    display.print("Spit");
+    display.setCursor(104, 10);
+    display.print("s");
+
+    display.setTextColor(BLACK);
+    if (mist_valve == 1) {
+      display.fillRect(0, 22, 63, 10, WHITE);
+      display.setCursor(2, 23);
+      display.print("Coolant On");
+    }
+    else if (spit_mode == 1) {
+      display.fillRect(0, 22, 57, 10, WHITE);
+      display.setCursor(2, 23);
+      display.print("Spit Mode");
+    }
+    if (air_valve == 1) {
+      display.fillRect(89, 22, 39, 10, WHITE);
+      display.setCursor(91, 23);
+      display.print("Air On");
+    }
+#endif
     display.display();
   }
 #endif
