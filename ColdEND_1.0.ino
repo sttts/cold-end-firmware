@@ -30,6 +30,11 @@ float mist_max_flow_rate = 50;              // Maximum coolant flow step delay (
 int ml_per_hour = 150;                      // Maximum milliliter per hour (needs to be metered before)
 int ml_per_hour_min = 1;                    // Minimum milliliter per hours
 
+
+// #define LINEAR_MILLILITER_PER_SECOND     // Set to 1 for linear control of ml/s
+#define EXPONENTIAL_MILLILITER_PER_SECOND   // Set to 0 for exponential control of ml/s
+
+
 #ifdef SSD1306
   #define oled
   #include <Wire.h>
@@ -82,8 +87,8 @@ unsigned long spit_stop;                    // Spit mode stop time in millis
 
 
 // Display variables
-int mist_pot_val;
-int mist_pot_old;
+float mist_pot_val;
+float mist_pot_old;
 int spit_pot_val;
 int spit_pot_old;
 int mist_valve_old;
@@ -219,14 +224,26 @@ void closeAirValve() {
   air_valve = 0;
 }
 
+float exp_scale = log(ml_per_hour/ml_per_hour_min);
 
 void readMistPot() {
   // Read mist pot, smooth the value and convert it for stepper speed and display output
   mist_prev = mist_smooth;
   mist_pot = analogRead(potMist);
-  mist_smooth = 0.1*mist_pot + 0.9*mist_prev;
-  mist_pot_val = max(map(mist_smooth, 0, 1000, ml_per_hour, ml_per_hour_min), ml_per_hour_min);
-  mist_flow_rate = mist_max_flow_rate*ml_per_hour/mist_pot_val;
+  mist_smooth = 0.1 * mist_pot + 0.9 * mist_prev;
+#if defined(LINEAR_MILLILITER_PER_SECOND)
+  mist_pot_val = int(max(map(mist_smooth, 0, 1000, ml_per_hour, ml_per_hour_min), ml_per_hour_min));
+#elif defined(EXPONENTIAL_MILLILITER_PER_SECOND)
+  mist_pot_val = exp(max(0, 1000-mist_smooth)/1000.0*exp_scale)*ml_per_hour_min;
+  if (mist_pot_val < 10) {
+    mist_pot_val = int(mist_pot_val*10)/10.0;
+  } else {
+    mist_pot_val = int(mist_pot_val);
+  }
+#else
+  #error LINEAR_MILLILITER_PER_SECOND or EXPONENTIAL_MILLILITER_PER_SECOND must be defined
+#endif
+  mist_flow_rate = mist_max_flow_rate * ml_per_hour / mist_pot_val;
 }
 
 
@@ -239,116 +256,144 @@ void readSpitPot() {
 
 
 #ifdef oled
-  void prepareDisplay() {
-    // Check for new values by comparing them to previous values
-    // Refresh OLED content only when any of the displayed values have changed
-    if (mist_pot_val != mist_pot_old || spit_pot_val != spit_pot_old || mist_valve != mist_valve_old || air_valve != air_valve_old) {
-      refreshDisplay();
-      mist_pot_old = mist_pot_val;
-      spit_pot_old = spit_pot_val;
-      mist_valve_old = mist_valve;
-      air_valve_old = air_valve;
-    }
+void prepareDisplay() {
+  // Check for new values by comparing them to previous values
+  // Refresh OLED content only when any of the displayed values have changed
+  if (mist_pot_val != mist_pot_old || spit_pot_val != spit_pot_old || mist_valve != mist_valve_old || air_valve != air_valve_old) {
+    refreshDisplay();
+    mist_pot_old = mist_pot_val;
+    spit_pot_old = spit_pot_val;
+    mist_valve_old = mist_valve;
+    air_valve_old = air_valve;
   }
+}
 
-  void refreshDisplay() {
-    display.clearDisplay();
+void refreshDisplay() {
+  display.clearDisplay();
 #if SCREEN_HEIGHT >= 64
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.setCursor(0, 0);
-    display.print("Coolant");
-    display.setCursor(101, 0);
-    display.print("Spit");
-    display.drawLine(0, 12, 128, 12, WHITE);
-    display.setFont(&FreeSans18pt7b);
-    display.setCursor(0, 42);
-    display.print(mist_pot_val);
-    display.setFont();
-    display.setTextSize(1);
-    if (mist_pot_val < 10) {
-      display.setCursor(22, 36);
-    }
-    else if (mist_pot_val < 100) {
-     display.setCursor(41, 36);
-    }
-    else {
-      display.setCursor(60, 36);
-    }
-    display.print("ml/h");
-    display.setFont(&FreeSans18pt7b);
-    display.setCursor(101, 42);
-    display.print(spit_pot_val);
-    display.setFont();
-    display.setTextSize(1);
-    display.setCursor(122, 36);
-    display.print("s");
-    display.drawLine(0, 48, 128, 48, WHITE);
-    display.setTextColor(BLACK);
-    if (mist_valve == 1) {
-      display.fillRect(0, 54, 63, 10, WHITE);
-      display.setCursor(2, 55);
-      display.print("Coolant On");
-    }
-    else if (spit_mode == 1) {
-      display.fillRect(0, 54, 57, 10, WHITE);
-      display.setCursor(2, 55);
-      display.print("Spit Mode");
-    }
-    if (air_valve == 1) {
-      display.fillRect(89, 54, 39, 10, WHITE);
-      display.setCursor(91, 55);   
-      display.print("Air On");
-    }
-#else
-    display.clearDisplay();
-    display.setTextColor(WHITE);
-    
-    display.setCursor(101, 0);
-    display.setFont(&FreeSans12pt7b);
-    display.setCursor(0, 16);
-    display.print(mist_pot_val);
-
-    display.setFont();
-    display.setTextSize(1);
-    int x = 44;
-    if (mist_pot_val < 10) {
-      x = 18;
-    } else if (mist_pot_val < 100) {
-      x = 31;
-    }
-    display.setCursor(x, 0);
-    display.print("Coolant");
-    display.setCursor(x, 10);
-    display.print("ml/h");
-
-    display.setFont(&FreeSans12pt7b);
-    display.setCursor(87, 16);
-    display.print(spit_pot_val);
-    display.setFont();
-    display.setTextSize(1);
-    display.setCursor(104, 0);
-    display.print("Spit");
-    display.setCursor(104, 10);
-    display.print("s");
-
-    display.setTextColor(BLACK);
-    if (mist_valve == 1) {
-      display.fillRect(0, 22, 63, 10, WHITE);
-      display.setCursor(2, 23);
-      display.print("Coolant On");
-    }
-    else if (spit_mode == 1) {
-      display.fillRect(0, 22, 57, 10, WHITE);
-      display.setCursor(2, 23);
-      display.print("Spit Mode");
-    }
-    if (air_valve == 1) {
-      display.fillRect(89, 22, 39, 10, WHITE);
-      display.setCursor(91, 23);
-      display.print("Air On");
-    }
-#endif
-    display.display();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+  display.print("Coolant");
+  display.setCursor(101, 0);
+  display.print("Spit");
+  display.drawLine(0, 12, 128, 12, WHITE);
+  display.setFont(&FreeSans18pt7b);
+  display.setCursor(0, 42);
+#ifdef EXPONENTIAL_MILLILITER_PER_SECOND
+  if (mist_pot_val < 10) { 
+    char s[4];
+    dtostrf(mist_pot_val, 3, 1, s);
+    display.print(s);
+  } else {
+    display.print(int(mist_pot_val));
   }
+#else
+  display.print(int(mist_pot_val));
+#endif
+  display.setFont();
+  display.setTextSize(1);
+  if (mist_pot_val < 10) {
+#ifdef EXPONENTIAL_MILLILITER_PER_SECOND
+    display.setCursor(51, 36);
+#else
+    display.setCursor(22, 36);
+#endif
+  }
+  else if (mist_pot_val < 100) {
+    display.setCursor(41, 36);
+  }
+  else {
+    display.setCursor(60, 36);
+  }
+  display.print("ml/h");
+  display.setFont(&FreeSans18pt7b);
+  display.setCursor(101, 42);
+  display.print(spit_pot_val);
+  display.setFont();
+  display.setTextSize(1);
+  display.setCursor(122, 36);
+  display.print("s");
+  display.drawLine(0, 48, 128, 48, WHITE);
+  display.setTextColor(BLACK);
+  if (mist_valve == 1) {
+    display.fillRect(0, 54, 63, 10, WHITE);
+    display.setCursor(2, 55);
+    display.print("Coolant On");
+  }
+  else if (spit_mode == 1) {
+    display.fillRect(0, 54, 57, 10, WHITE);
+    display.setCursor(2, 55);
+    display.print("Spit Mode");
+  }
+  if (air_valve == 1) {
+    display.fillRect(89, 54, 39, 10, WHITE);
+    display.setCursor(91, 55);
+    display.print("Air On");
+  }
+#else
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+
+  display.setCursor(101, 0);
+  display.setFont(&FreeSans12pt7b);
+  display.setCursor(0, 16);
+#ifdef EXPONENTIAL_MILLILITER_PER_SECOND
+  if (mist_pot_val < 10) {
+    char s[4];
+    dtostrf(mist_pot_val, 3, 1, s);
+    display.print(s);
+  } else {
+    display.print(int(mist_pot_val));
+  }
+#else
+  display.print(int(mist_pot_val));
+#endif
+
+  display.setFont();
+  display.setTextSize(1);
+  int x = 44;
+  if (mist_pot_val < 10) {
+#ifdef EXPONENTIAL_MILLILITER_PER_SECOND
+    x = 37;
+#else
+    x = 18;
+#endif
+  } else if (mist_pot_val < 100) {
+    x = 31;
+  }
+  display.setCursor(x, 0);
+  display.print("Coolant");
+  display.setCursor(x, 10);
+  display.print("ml/h");
+
+  display.setFont(&FreeSans12pt7b);
+  display.setCursor(87, 16);
+  display.print(spit_pot_val);
+  display.setFont();
+  display.setTextSize(1);
+  display.setCursor(104, 0);
+  display.print("Spit");
+  display.setCursor(104, 10);
+  display.print("s");
+
+  display.setTextColor(BLACK);
+  if (mist_valve == 1) {
+    display.fillRect(0, 22, 63, 10, WHITE);
+    display.setCursor(2, 23);
+    display.print("Coolant On");
+  }
+  else if (spit_mode == 1) {
+    display.fillRect(0, 22, 57, 10, WHITE);
+    display.setCursor(2, 23);
+    display.print("Spit Mode");
+  }
+  if (air_valve == 1) {
+    display.fillRect(89, 22, 39, 10, WHITE);
+    display.setCursor(91, 23);
+    display.print("Air On");
+  }
+#endif
+  display.display();
+}
 #endif
