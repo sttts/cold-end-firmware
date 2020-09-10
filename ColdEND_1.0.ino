@@ -24,6 +24,12 @@
 #define SCREEN_HEIGHT 32                    // OLED display height, in pixels
 #define OLED_RESET     4                    // Reset pin # (or -1 if sharing Arduino reset pin)
 
+
+// to be calibrated
+float mist_max_flow_rate = 50;              // Maximum coolant flow step delay (min. delay time between step LOW and HIGH; calibrate to match ml_per_hour)
+int ml_per_hour = 150;                      // Maximum milliliter per hour (needs to be metered before)
+int ml_per_hour_min = 1;                    // Minimum milliliter per hours
+
 #ifdef SSD1306
   #define oled
   #include <Wire.h>
@@ -59,8 +65,6 @@ const int outSpitLED = 12;                  // Spit LED pin
 
 // Mist and spit variables
 float mist_flow_rate;                       // Coolant flow rate value
-float mist_min_flow_rate = 6000;            // Minimum coolant flow rate (max. delay time between step LOW and HIGH)
-float mist_max_flow_rate = 50;              // Maximum coolant flow rate (min. delay time between step LOW and HIGH)
 float fast_flow_rate = 100;                 // Fast mode flow rate value
 float spit_flow_rate = 100;                 // Spit flow rate value
 float spit_time;                            // Spit mode time
@@ -85,7 +89,6 @@ int spit_pot_old;
 int mist_valve_old;
 int air_valve_old;
 int spit_mode;
-int ml_per_hour = 150;                      // Maximum milliliter per hour (needs to be metered before)
 
 
 void setup() {
@@ -178,15 +181,22 @@ void spitMode() {
   spit_stat = 1;
 }
 
+void delayMicrosecondsLong(long t) {
+  while (t > 16383) {
+    delayMicroseconds(16383);
+    t -= 16383;
+  }
+  delayMicroseconds(t);
+}
 
 void moveStepper(int delay) {
   // Open mist valve and run stepper at desired speed
   digitalWrite(outMistValve, LOW);
   digitalWrite(outEna, LOW);
   digitalWrite(outStep, HIGH);
-  delayMicroseconds(delay);
+  delayMicrosecondsLong(delay);
   digitalWrite(outStep, LOW);
-  delayMicroseconds(delay);
+  delayMicrosecondsLong(delay);
   mist_valve = 1;
 }
 
@@ -215,8 +225,8 @@ void readMistPot() {
   mist_prev = mist_smooth;
   mist_pot = analogRead(potMist);
   mist_smooth = 0.1*mist_pot + 0.9*mist_prev;
-  mist_pot_val = map(mist_smooth, 0, 1000, ml_per_hour, 10)/5*5;
-  mist_flow_rate = map(mist_smooth, 0, 1023, mist_max_flow_rate, mist_min_flow_rate);
+  mist_pot_val = max(map(mist_smooth, 0, 1000, ml_per_hour, ml_per_hour_min), ml_per_hour_min);
+  mist_flow_rate = mist_max_flow_rate*ml_per_hour/mist_pot_val;
 }
 
 
